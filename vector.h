@@ -24,7 +24,7 @@ typedef struct
 static inline void invert(Vector *vector);                                        // invert the sign of all the components of vector
 static inline void scale(Vector *vector, real scalar);                            // scale vector by real constant scalar
 static inline void normalize(Vector *vector);                                     // normalize if vector is non-zero; do nothing otherwise
-static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalar); // does vectorDest = vectorDest + scalar * vectorSrc
+static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalarOne, real scalarTwo); // does vectorDest = vectorDest + scalar * vectorSrc
 static inline void componentProduct(Vector *vectorDest, const Vector *vectorSrc);
 static inline void crossProduct(Vector *vectorDest, const Vector *vectorSrc);
 
@@ -51,10 +51,11 @@ static inline void normalize(Vector *vector)
     }
 }
 
-static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalar)
+static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalarOne, real scalarTwo)
 {
     Vector scaledVector = *vectorSrc;
-    scale(&scaledVector, scalar);
+    scale(&scaledVector, scalarTwo);
+    scale(vectorDest, scalarOne);
 
     vectorDest->x += scaledVector.x;
     vectorDest->y += scaledVector.y;
