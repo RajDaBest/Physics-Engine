@@ -25,8 +25,8 @@ static inline void invert(Vector *vector);                                      
 static inline void scale(Vector *vector, real scalar);                            // scale vector by real constant scalar
 static inline void normalize(Vector *vector);                                     // normalize if vector is non-zero; do nothing otherwise
 static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalar); // does vectorDest = vectorDest + scalar * vectorSrc
-static inline void componentProduct(Vector *vectorDest, Vector *vectorSrc);
-static inline void crossProduct(Vector *vectorDest, Vector *vectorSrc);
+static inline void componentProduct(Vector *vectorDest, const Vector *vectorSrc);
+static inline void crossProduct(Vector *vectorDest, const Vector *vectorSrc);
 
 static void invert(Vector *vector)
 {
@@ -61,17 +61,21 @@ static inline void addScaled(Vector *vectorDest, Vector *vectorSrc, real scalar)
     vectorDest->z += scaledVector.z;
 }
 
-static inline void componentProduct(Vector *vectorDest, Vector *vectorSrc)
+static inline void componentProduct(Vector *vectorDest, const Vector *vectorSrc)
 {
     vectorDest->x *= vectorSrc->x;
     vectorDest->y *= vectorSrc->y;
     vectorDest->z *= vectorSrc->z;
 }
 
-static inline void crossProduct(Vector *vectorDest, const Vector *vectorSrc1, const Vector *vectorSrc2)
+static inline void crossProduct(Vector *vectorDest, const Vector *vectorSrc)
 {
-    vectorDest->x = vectorSrc1->y * vectorSrc2->z - vectorSrc1->z * vectorSrc2->y;
-    vectorDest->y = vectorSrc1->z * vectorSrc2->x - vectorSrc1->x * vectorSrc2->z;
-    vectorDest->z = vectorSrc1->x * vectorSrc2->y - vectorSrc1->y * vectorSrc2->x;
+    real destX = vectorDest->x;
+    real destY = vectorDest->y;
+    real destZ = vectorDest->z;
+
+    vectorDest->x = destY * vectorSrc->z - destZ * vectorSrc->y; 
+    vectorDest->y = destZ * vectorSrc->x - destX * vectorSrc->z; 
+    vectorDest->z = destX * vectorSrc->y - destY * vectorSrc->x;
 }
 #endif
