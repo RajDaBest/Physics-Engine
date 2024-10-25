@@ -4,8 +4,6 @@
 #include "vector.h"
 #include <assert.h>
 
-Vector forceAccum;
-
 /* An implication of Newton's second law is that we cannot do anything to
 an object to directly change its position or velocity; we can only do that indirectly by
 applying a force to change the acceleration and wait until the object reaches our target
@@ -25,6 +23,7 @@ be left alone by the integrator. */
 typedef struct
 {
     Vector position, velocity, acceleration;
+    Vector forceAccum;
 
     // When we come to perform the integration, we will remove a proportion of the
     // object’s velocity at each update. The damping parameter controls how velocity is left
@@ -56,7 +55,7 @@ typedef struct
 
 static inline void integrate(Particle *particle, real duration);
 
-/* 
+/*
 
 At each frame, the engine needs to look at each object in turn, work out it's acceleration, and perform the integration.
 The integrator consists of two parts: one to update the position of the object and the other to update it's velocity.
@@ -71,7 +70,7 @@ unlikely to feel smooth in this case anyway, so it is a common rule of thumb.
 
 */
 
-/*  
+/*
 
 The Update Equations
 
@@ -121,7 +120,7 @@ thousands of sparks, for example, use the former equation, or even remove dampin
 Because we are heading towards an engine designed for simulating a smaller number of rigid bodies, I will use the latter form.
 
 A different approach favoured by many engine developers is to use the former equation with a damping value very near to 1 - so small
-that it will not be noticeable to the player but big enough to be able to solve the numerical instability problem. In this case a 
+that it will not be noticeable to the player but big enough to be able to solve the numerical instability problem. In this case a
 variable frame rate will not make any visual difference. Drag forces can then be created and applied as explicit forces that will act on
 each object.
 
@@ -142,7 +141,7 @@ static inline void integrate(Particle *particle, real duration)
     addScaled(&particle->position, &particle->velocity, 1.0, duration);
 
     // work out acceleration from the force
-    addScaled(&particle->acceleration, &forceAccum, 0, particle->inverseMass);
+    addScaled(&particle->acceleration, &particle->forceAccum, 0, particle->inverseMass);
 
     // update linear velocity from the resulting acceleration
     addScaled(&particle->velocity, &particle->acceleration, 1.0, duration);

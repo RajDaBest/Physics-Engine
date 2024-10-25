@@ -15,8 +15,8 @@ typedef struct
     real padding; // just for making the structure quadword for performance purposes; memory is optimized for quadwords
 } Vector;
 
-#define Vector(x, y, z) ((Vector){.x = x, .y = y, .z = z, .padding = 0.0})
-#define Vector() ((Vector){.x = 0.0, .y = 0.0, .z = 0.0, .padding = 0.0})
+#define vectorDef(vx, vy, vz) (Vector){.x = vx, .y = vy, .z = vz, .padding = 0.0}
+#define nullVectorDef() (Vector){.x = 0.0, .y = 0.0, .z = 0.0, .padding = 0.0}
 #define magnitude(vector) (real_sqrt((vector).x * (vector).x + (vector).y * (vector).y + (vector).z * (vector).z))
 #define squaredMagnitude(vector) ((vector).x * (vector).x + (vector).y * (vector).y + (vector).z * (vector).z)
 #define dotProduct(vectorA, vectorB) (vectorA->x * vectorB->x + vectorA->y * vectorB->y + vectorA->z * vectorB->z) // returns dot product of vectorA and vectorB
@@ -37,9 +37,9 @@ static void invert(Vector *vector)
 
 static inline void scale(Vector *vector, real scalar)
 {
-    vector->x *= vector->x * scalar;
-    vector->y *= vector->y * scalar;
-    vector->z *= vector->z * scalar;
+    vector->x *= scalar;
+    vector->y *= scalar;
+    vector->z *= scalar;
 }
 
 static inline void normalize(Vector *vector)
