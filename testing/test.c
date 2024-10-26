@@ -1,4 +1,4 @@
-#include "particle.h"
+#include "../src/particle.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <stdbool.h>
