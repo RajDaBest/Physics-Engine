@@ -50,8 +50,8 @@ typedef struct
     real inverseMass;
 } Particle;
 
-#define setInverseMass(particle, inverseMass) (particle->inverseMass = inverseMass) // use this for setting infinite masses by passing zero
-#define setMass(particle, mass) (particle->inverseMass = 1.0 / mass)                // use this for setting any mass except zero
+#define setInverseMass(particle, inverseMass) ((particle)->inverseMass = inverseMass) // use this for setting infinite masses by passing zero
+#define setMass(particle, mass) ((particle)->inverseMass = 1.0 / mass)                // use this for setting any mass except zero
 
 static inline void integrate(Particle *particle, real duration);
 
@@ -144,7 +144,8 @@ static inline void integrate(Particle *particle, real duration)
     addScaled(&particle->acceleration, &particle->forceAccum, 0, particle->inverseMass);
 
     // update linear velocity from the resulting acceleration
-    addScaled(&particle->velocity, &particle->acceleration, 1.0, duration);
+    real coeff = pow(particle->damping, duration);
+    addScaled(&particle->velocity, &particle->acceleration, coeff, duration);
 }
 
 #endif
