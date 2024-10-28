@@ -121,7 +121,7 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -9.8
+#define ACC_DUE_TO_GRAV -981
 
 // Forward declarations
 typedef struct Particle Particle;
@@ -220,16 +220,17 @@ Vector Particle_DragForce(const Particle *particle, void *parameters)
     Vector velocity = particle->velocity;
     real velocityMag = magnitude(velocity);
 
-    if (velocityMag == 0.0)
+    /* if (velocityMag < 100)
     {
         return nullVectorDef();
-    }
+    } */
 
     normalize(&velocity);
     real dragMagnitude = coeffs->linear * velocityMag +
                          coeffs->quadratic * velocityMag * velocityMag;
 
-    scale(&velocity, -dragMagnitude);
+    invert(&velocity);
+    scale(&velocity, dragMagnitude);
     return velocity;
 }
 
@@ -342,6 +343,7 @@ void Particle_Integrate(Particle *particle, real duration)
     // Reset forces and update time
     particle->resultantForce = nullVectorDef();
     particle->time += duration;
+    particle->acceleration = nullVectorDef();
 }
 
 #endif
