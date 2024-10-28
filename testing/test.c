@@ -39,8 +39,8 @@ static void renderCircle(SDL_Renderer *renderer, int x, int y, int radius)
 static Particle *createParticle(void)
 {
     // Random velocity variation for more interesting motion
-    real velX = 800.0 + (rand() % 50);
-    real velY = 600.0 + (rand() % 100);
+    real velX = 200 + (rand() % 50);
+    real velY = 200 + (rand() % 80);
 
     Vector initPos = vectorDef(CIRCLE_RADIUS, WINDOW_HEIGHT / 2, 0.0);
     Vector initVel = vectorDef(velX, velY, 0.0);
@@ -51,7 +51,7 @@ static Particle *createParticle(void)
         initVel, // Initial velocity
         initAcc, // Initial acceleration
         2.0,     // Mass
-        0.9,    // Damping
+        0.99,    // Damping
         0.0      // Start time
     );
 
@@ -62,6 +62,8 @@ static Particle *createParticle(void)
 
         // Add drag force (always active)
         Particle_AddForce(particle, Particle_DragForce, 0.0, INFINITY, &dragCoeffs);
+
+        
     }
 
     return particle;

@@ -121,13 +121,23 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -981
+#define ACC_DUE_TO_GRAV -9.81
 
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
 typedef struct DragCoefficients DragCoefficients;
+typedef struct SpringParameters SpringParameters;
 
 typedef Vector (*ForceFunction)(const Particle *particle, void *parameters);
+
+// could implement a force magnitude limit checking and adding force clamping to avoid high mag forces
+
+typedef enum
+{
+    PARTICLE_SUCCESS,
+    PARTICLE_ERROR_MEMORY,
+    PARTICLE_ERROR_INVALID_PARAM
+} ParticleError;
 
 struct Particle
 {
@@ -160,6 +170,14 @@ struct DragCoefficients
     real quadratic; // k2
 };
 
+struct SpringParameters
+{
+    Particle *other;
+    real springCoeff;
+    real restLength;
+    real maxLength;
+};
+
 Particle *Particle_Create(
     Vector position,
     Vector velocity,
@@ -170,12 +188,13 @@ Particle *Particle_Create(
 void Particle_Destroy(Particle *particle);
 
 void Particle_Integrate(Particle *particle, real duration);
-void Particle_AddForce(Particle *particle, ForceFunction force,
-                       real startTime, real endTime, void *parameters);
+ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
+                                real startTime, real endTime, void *parameters);
 void Particle_ClearForces(Particle *particle);
 
-Vector Particle_GravityForce(const Particle *particle, void *parameters);
-Vector Particle_DragForce(const Particle *particle, void *parameters);
+Vector Particle_GravityForce(const Particle *particle, void *gravParameters);
+Vector Particle_DragForce(const Particle *particle, void *dragParameters);
+Vector Particle_SpringForce(const Particle *particle, void *springParameters);
 
 static inline real Particle_GetMass(const Particle *particle)
 {
@@ -193,7 +212,7 @@ static inline bool Particle_IsStatic(const Particle *particle)
     return particle->inverseMass == 0.0;
 }
 
-Vector Particle_GravityForce(const Particle *particle, void *parameters)
+Vector Particle_GravityForce(const Particle *particle, void *gravParameters)
 {
     if (Particle_IsStatic(particle))
     {
@@ -203,9 +222,9 @@ Vector Particle_GravityForce(const Particle *particle, void *parameters)
     return vectorDef(0.0, ACC_DUE_TO_GRAV * mass, 0.0);
 }
 
-Vector Particle_DragForce(const Particle *particle, void *parameters)
+Vector Particle_DragForce(const Particle *particle, void *dragParameters)
 {
-    DragCoefficients *coeffs = (DragCoefficients *)parameters;
+    DragCoefficients *coeffs = (DragCoefficients *)dragParameters;
     Vector velocity = particle->velocity;
     real velocityMag = magnitude(velocity);
 
@@ -221,6 +240,45 @@ Vector Particle_DragForce(const Particle *particle, void *parameters)
     invert(&velocity);
     scale(&velocity, dragMagnitude);
     return velocity;
+}
+
+Vector Particle_SpringForce(const Particle *particle, void *springParameters)
+{
+    SpringParameters *param = (SpringParameters *)springParameters;
+
+    Vector force = param->other->position;
+    Vector particle_pos = particle->position;
+    invert(&(particle_pos));
+
+    vecAdd(&force, &particle_pos);
+
+    real mag = magnitude(force);
+    if (mag == 0.0)
+    {
+        return nullVectorDef();
+    }
+
+    // Calculate the magnitude of the force using Hooke's Law
+    // F = -k(|d| - r) * (d/|d|)
+    // where k is spring constant, |d| is distance between points,
+    // r is rest length, and (d/|d|) is the unit direction vector
+    real displacement = mag - param->restLength;
+    real forceMagnitude = param->springCoeff * displacement;
+
+    if (mag >= param->maxLength)
+    {
+        real fadeRange = param->maxLength * 0.1f; // 10% fade range
+        real fade = (param->maxLength + fadeRange - mag) / fadeRange;
+        if (fade <= 0)
+            return nullVectorDef();
+        forceMagnitude *= fade;
+    }
+
+    // Normalize the force vector and scale it
+    normalize(&force);
+    scale(&force, forceMagnitude);
+
+    return force;
 }
 
 Particle *Particle_Create(Vector position, Vector velocity, Vector acceleration,
@@ -263,9 +321,14 @@ void Particle_Destroy(Particle *particle)
     }
 }
 
-void Particle_AddForce(Particle *particle, ForceFunction force,
-                       real startTime, real endTime, void *parameters)
+ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
+                                real startTime, real endTime, void *parameters)
 {
+    if (!particle || !force)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+
     if (particle->forceCount >= particle->forceCapacity)
     {
         size_t newCapacity = particle->forceCapacity * 2;
@@ -273,7 +336,7 @@ void Particle_AddForce(Particle *particle, ForceFunction force,
                                               sizeof(ForceGenerator) * newCapacity);
         if (!newRegistry)
         {
-            return;
+            return PARTICLE_ERROR_MEMORY;
         }
         particle->forceRegistry = newRegistry;
         particle->forceCapacity = newCapacity;
