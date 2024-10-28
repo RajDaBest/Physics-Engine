@@ -123,15 +123,12 @@ The time duration we use it the duration of the last frame (or some initial dura
 #define FORCE_LIMIT 100
 #define ACC_DUE_TO_GRAV -981
 
-// Forward declarations
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
 typedef struct DragCoefficients DragCoefficients;
 
-// Function pointer type for force calculations
 typedef Vector (*ForceFunction)(const Particle *particle, void *parameters);
 
-// Main particle structure
 struct Particle
 {
     Vector position;
@@ -148,7 +145,6 @@ struct Particle
     size_t forceCapacity;
 };
 
-// Force generator structure
 struct ForceGenerator
 {
     ForceFunction function;
@@ -158,14 +154,12 @@ struct ForceGenerator
     bool isActive;
 };
 
-// Drag force coefficients
 struct DragCoefficients
 {
     real linear;    // k1
     real quadratic; // k2
 };
 
-// Constructor and destructor
 Particle *Particle_Create(
     Vector position,
     Vector velocity,
@@ -175,17 +169,14 @@ Particle *Particle_Create(
     real startTime);
 void Particle_Destroy(Particle *particle);
 
-// Core physics functions
 void Particle_Integrate(Particle *particle, real duration);
 void Particle_AddForce(Particle *particle, ForceFunction force,
                        real startTime, real endTime, void *parameters);
 void Particle_ClearForces(Particle *particle);
 
-// Force generators
 Vector Particle_GravityForce(const Particle *particle, void *parameters);
 Vector Particle_DragForce(const Particle *particle, void *parameters);
 
-// Utility functions
 static inline real Particle_GetMass(const Particle *particle)
 {
     return particle->inverseMass != 0.0 ? 1.0 / particle->inverseMass : INFINITY;
@@ -201,8 +192,6 @@ static inline bool Particle_IsStatic(const Particle *particle)
 {
     return particle->inverseMass == 0.0;
 }
-
-// Implementation
 
 Vector Particle_GravityForce(const Particle *particle, void *parameters)
 {
@@ -220,10 +209,10 @@ Vector Particle_DragForce(const Particle *particle, void *parameters)
     Vector velocity = particle->velocity;
     real velocityMag = magnitude(velocity);
 
-    /* if (velocityMag < 100)
+    if (velocityMag < 0.01)
     {
         return nullVectorDef();
-    } */
+    }
 
     normalize(&velocity);
     real dragMagnitude = coeffs->linear * velocityMag +
@@ -252,8 +241,7 @@ Particle *Particle_Create(Vector position, Vector velocity, Vector acceleration,
 
     Particle_SetMass(particle, mass);
 
-    // Initialize force registry
-    particle->forceCapacity = 8; // Start with space for 8 forces
+    particle->forceCapacity = 8;
     particle->forceCount = 0;
     particle->forceRegistry = malloc(sizeof(ForceGenerator) * particle->forceCapacity);
 
@@ -278,7 +266,6 @@ void Particle_Destroy(Particle *particle)
 void Particle_AddForce(Particle *particle, ForceFunction force,
                        real startTime, real endTime, void *parameters)
 {
-    // Resize force registry if needed
     if (particle->forceCount >= particle->forceCapacity)
     {
         size_t newCapacity = particle->forceCapacity * 2;
@@ -286,7 +273,7 @@ void Particle_AddForce(Particle *particle, ForceFunction force,
                                               sizeof(ForceGenerator) * newCapacity);
         if (!newRegistry)
         {
-            return; // Failed to allocate memory
+            return;
         }
         particle->forceRegistry = newRegistry;
         particle->forceCapacity = newCapacity;
@@ -310,10 +297,8 @@ void Particle_Integrate(Particle *particle, real duration)
 {
     assert(duration > 0.0);
 
-    // Update position
     addScaled(&particle->position, &particle->velocity, 1.0, duration);
 
-    // Accumulate forces
     for (size_t i = 0; i < particle->forceCount; i++)
     {
         ForceGenerator *generator = &particle->forceRegistry[i];
@@ -328,7 +313,6 @@ void Particle_Integrate(Particle *particle, real duration)
         }
     }
 
-    // Update acceleration from forces
     if (!Particle_IsStatic(particle))
     {
         Vector accFromForce = particle->resultantForce;
@@ -336,11 +320,9 @@ void Particle_Integrate(Particle *particle, real duration)
         vecAdd(&particle->acceleration, &accFromForce);
     }
 
-    // Update velocity
     real dampingFactor = pow(particle->damping, duration);
     addScaled(&particle->velocity, &particle->acceleration, dampingFactor, duration);
 
-    // Reset forces and update time
     particle->resultantForce = nullVectorDef();
     particle->time += duration;
     particle->acceleration = nullVectorDef();
