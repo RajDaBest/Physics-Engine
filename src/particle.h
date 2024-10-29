@@ -120,13 +120,14 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -98.1
+#define ACC_DUE_TO_GRAV -9.81
 
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
 typedef struct DragCoefficients DragCoefficients;
 typedef struct SpringParameters SpringParameters;
 typedef struct AnchoredSpringParameters AnchoredSpringParameters;
+typedef struct SpringParameters ElasticBungeeParameters;
 typedef enum ParticleError ParticleError;
 typedef enum ForceIdentifier ForceIdentifier;
 
@@ -222,8 +223,10 @@ void Particle_Destroy(Particle *particle);
 ParticleError Particle_Integrate(Particle *particle, real duration);
 ParticleError buildDragCoeffs(real linear, real quadratic, DragCoefficients *coeffs);
 ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
-                                    real dampingCoeff, SpringParameters *params);
+                                    real dampingCoeff, SpringParameters *springParameters);
 ParticleError buildAnchoredSpringParameters(Vector anchor, real springConstant, real restLength, real dampingCoefficient, AnchoredSpringParameters *anchoredSpringParameters);
+ParticleError buildElasticBungeeParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
+                                           real dampingCoeff, ElasticBungeeParameters *elasticBungeeParameters);
 ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
                                 real startTime, real endTime, void *parameters,
                                 ForceIdentifier identifier);
@@ -231,12 +234,14 @@ ParticleError Particle_AddGrav(Particle *particle);
 ParticleError Particle_AddDrag(Particle *particle, DragCoefficients *dragCoefficients);
 ParticleError Particle_AddSpring(Particle *particleA, Particle *particleB, SpringParameters *springParameters, real startTime, real endTime);
 ParticleError Particle_AddAnchoredSpring(Particle *particle, Vector anchor, AnchoredSpringParameters *anchoredSpringParameters, real startTime, real endTime);
+ParticleError Particle_AddElasticBungee(Particle *particleA, Particle *particleB, ElasticBungeeParameters *elasticBungeeParameters, real startTime, real endTime);
 void Particle_ClearForces(Particle *particle);
 
 Vector Particle_GravityForce(const Particle *particle, void *gravParameters);
 Vector Particle_DragForce(const Particle *particle, void *dragParameters);
 Vector Particle_SpringForce(const Particle *particle, void *springParameters);
 Vector Particle_AnchoredSpringForce(const Particle *particle, void *anchoredSpringParameters);
+Vector Particle_ElasticBungeeForce(const Particle *particle, void *elasticBungeeParameters);
 
 ParticleError Particle_GetMass(const Particle *particle, real *mass);
 ParticleError Particle_SetMass(Particle *particle, real mass);
@@ -358,6 +363,56 @@ Vector Particle_AnchoredSpringForce(const Particle *particle, void *anchoredSpri
     vecAdd(&force, &anchorPos);
 
     real forceMagnitude = -params->springConstant * (magnitude(force) - params->restLength) - params->dampingCoeff * ((dotProduct(force, particle->velocity) / magnitude(force)));
+
+    normalize(&force);
+    scale(&force, forceMagnitude);
+
+    particleErrno = PARTICLE_SUCCESS;
+    return force;
+}
+
+Vector Particle_ElasticBungeeForce(const Particle *particle, void *elasticBungeeParameters)
+{
+    if (!particle || !elasticBungeeParameters)
+    {
+        particleErrno = PARTICLE_ERROR_INVALID_PARAM;
+        return nullVectorDef();
+    }
+
+    ElasticBungeeParameters *param = (ElasticBungeeParameters *)elasticBungeeParameters;
+
+    Vector otherPos;
+    Vector otherVel;
+    Vector partVel;
+
+    if (param->particleA->uniqueID == particle->uniqueID)
+    {
+        otherPos = param->particleB->position;
+        otherVel = param->particleB->velocity;
+        partVel = particle->velocity;
+    }
+    else
+    {
+        otherPos = param->particleA->position;
+        otherVel = param->particleA->velocity;
+        partVel = particle->velocity;
+    }
+
+    invert(&otherPos);
+    invert(&otherVel);
+    vecAdd(&partVel, &otherVel);
+
+    Vector force = particle->position;
+    vecAdd(&force, &otherPos);
+
+    real newLen = magnitude(force) - param->restLength;
+
+    if (newLen <= 0.0)
+    {
+        return nullVectorDef();
+    }
+
+    real forceMagnitude = -param->springConstant * (newLen) - param->dampingCoeff * ((dotProduct(force, partVel) / magnitude(force)));
 
     normalize(&force);
     scale(&force, forceMagnitude);
@@ -511,6 +566,12 @@ ParticleError buildAnchoredSpringParameters(Vector anchor, real springConstant, 
     anchoredSpringParameters->springConstant = springConstant;
 }
 
+ParticleError buildElasticBungeeParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
+                                           real dampingCoeff, ElasticBungeeParameters *elasticBungeeParameters)
+{
+    return buildSpringParameters(particleA, particleB, springConstant, restLength, dampingCoeff, elasticBungeeParameters);
+}
+
 ParticleError Particle_GetMass(const Particle *particle, real *mass)
 {
     if (!particle || !mass)
@@ -630,6 +691,17 @@ ParticleError Particle_AddAnchoredSpring(Particle *particle, Vector anchor, Anch
     return (Particle_AddForce(particle, Particle_AnchoredSpringForce, startTime, endTime, (void *)anchoredSpringParameters, ANCHORED_SPRING));
 }
 
+ParticleError Particle_AddElasticBungee(Particle *particleA, Particle *particleB, ElasticBungeeParameters *elasticBungeeParameters, real startTime, real endTime)
+{
+    if (!particleA || !particleB || !elasticBungeeParameters)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+
+    Particle_AddForce(particleB, Particle_ElasticBungeeForce, startTime, endTime, (void *)elasticBungeeParameters, BUNGEE);
+    return (Particle_AddForce(particleA, Particle_ElasticBungeeForce, startTime, endTime, (void *)elasticBungeeParameters, BUNGEE));
+}
+
 void Particle_ClearForces(Particle *particle)
 {
     if (particle)
@@ -662,7 +734,7 @@ ParticleError Particle_Integrate(Particle *particle, real duration)
         if (particle->time >= generator->startTime &&
             particle->time <= generator->endTime)
         {
-            if (generator->identity == SPRING)
+            if (generator->identity == SPRING || generator->identity == BUNGEE)
             {
                 SpringParameters *param = (SpringParameters *)generator->parameters;
                 if (param->notAlreadyUsed)

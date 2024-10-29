@@ -167,7 +167,7 @@ static ParticleError createParticlePair(ParticleInstance *particles, int *partic
     }
 
     // Add spring forces
-    error = Particle_AddSpring(p1, p2, spring, 0.0, INFINITY);
+    error = Particle_AddElasticBungee(p1, p2, spring, 0.0, INFINITY);
     if (error != PARTICLE_SUCCESS)
     {
         free(spring);
