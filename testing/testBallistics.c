@@ -55,6 +55,7 @@ static Particle *createParticle(void)
         0.0      // Start time
     );
 
+
     if (particle)
     {
         // Add gravity force (always active)
@@ -63,7 +64,7 @@ static Particle *createParticle(void)
         // Add drag force (always active)
         Particle_AddForce(particle, Particle_DragForce, 0.0, INFINITY, &dragCoeffs);
 
-        
+
     }
 
     return particle;

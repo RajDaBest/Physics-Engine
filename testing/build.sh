@@ -1,0 +1,1 @@
+gcc $1 -o $2 -lSDL2 -lm -mavx2 -O3

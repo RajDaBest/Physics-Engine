@@ -121,23 +121,43 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -9.81
+#define ACC_DUE_TO_GRAV -98.1
 
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
 typedef struct DragCoefficients DragCoefficients;
 typedef struct SpringParameters SpringParameters;
+typedef enum ParticleError ParticleError;
+typedef enum ForceIdentifier ForceIdentifier;
 
 typedef Vector (*ForceFunction)(const Particle *particle, void *parameters);
 
 // could implement a force magnitude limit checking and adding force clamping to avoid high mag forces
 
-typedef enum
+enum ParticleError
 {
     PARTICLE_SUCCESS,
     PARTICLE_ERROR_MEMORY,
     PARTICLE_ERROR_INVALID_PARAM
-} ParticleError;
+};
+
+enum ForceIdentifier // set to zero for non-standard forces
+{
+    GRAV = 1,
+    DRAG,
+    SPRING,
+    ANCHORED_SPRING,
+    BUNGEE,
+};
+
+struct SpringParameters
+{
+    Particle *other;
+    real springConstant;
+    real restLength;
+    Vector forceVal;
+    bool notAlreadyUsed;
+};
 
 struct Particle
 {
@@ -158,6 +178,7 @@ struct Particle
 struct ForceGenerator
 {
     ForceFunction function;
+    ForceIdentifier identity;
     void *parameters;
     real startTime;
     real endTime;
@@ -170,13 +191,8 @@ struct DragCoefficients
     real quadratic; // k2
 };
 
-struct SpringParameters
-{
-    Particle *other;
-    real springCoeff;
-    real restLength;
-    real maxLength;
-};
+// #define buildDragCoeffs(linear_, quadratic_) (&((DragCoefficients){.linear = (linear_), .quadratic = (.quadratic_)}))
+// #define buildSpringCoeffs(other_, springConstant_, restLength_)
 
 Particle *Particle_Create(
     Vector position,
@@ -188,13 +204,26 @@ Particle *Particle_Create(
 void Particle_Destroy(Particle *particle);
 
 void Particle_Integrate(Particle *particle, real duration);
+static inline DragCoefficients buildDragCoeffs(real linear, real quadratic);
+static inline SpringParameters buildSpringParametes(Particle *other, real springConstant, real restLength);
 ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
-                                real startTime, real endTime, void *parameters);
+                                real startTime, real endTime, void *parameters, ForceIdentifier identifier);
+ParticleError Particle_AddGrav(Particle *particle);
+ParticleError Particle_AddDrag(Particle *particle, DragCoefficients *dragCoefficients);
 void Particle_ClearForces(Particle *particle);
 
 Vector Particle_GravityForce(const Particle *particle, void *gravParameters);
 Vector Particle_DragForce(const Particle *particle, void *dragParameters);
-Vector Particle_SpringForce(const Particle *particle, void *springParameters);
+
+static inline DragCoefficients buildDragCoeffs(real linear, real quadratic)
+{
+    return ((DragCoefficients){.linear = linear, .quadratic = quadratic});
+}
+
+static inline SpringParameters buildSpringParametes(Particle *other, real springConstant, real restLength)
+{
+    return ((SpringParameters){.other = other, .springConstant = springConstant, .restLength = restLength, .notAlreadyUsed = false, .forceVal = 0.0});
+}
 
 static inline real Particle_GetMass(const Particle *particle)
 {
@@ -242,45 +271,6 @@ Vector Particle_DragForce(const Particle *particle, void *dragParameters)
     return velocity;
 }
 
-Vector Particle_SpringForce(const Particle *particle, void *springParameters)
-{
-    SpringParameters *param = (SpringParameters *)springParameters;
-
-    Vector force = param->other->position;
-    Vector particle_pos = particle->position;
-    invert(&(particle_pos));
-
-    vecAdd(&force, &particle_pos);
-
-    real mag = magnitude(force);
-    if (mag == 0.0)
-    {
-        return nullVectorDef();
-    }
-
-    // Calculate the magnitude of the force using Hooke's Law
-    // F = -k(|d| - r) * (d/|d|)
-    // where k is spring constant, |d| is distance between points,
-    // r is rest length, and (d/|d|) is the unit direction vector
-    real displacement = mag - param->restLength;
-    real forceMagnitude = param->springCoeff * displacement;
-
-    if (mag >= param->maxLength)
-    {
-        real fadeRange = param->maxLength * 0.1f; // 10% fade range
-        real fade = (param->maxLength + fadeRange - mag) / fadeRange;
-        if (fade <= 0)
-            return nullVectorDef();
-        forceMagnitude *= fade;
-    }
-
-    // Normalize the force vector and scale it
-    normalize(&force);
-    scale(&force, forceMagnitude);
-
-    return force;
-}
-
 Particle *Particle_Create(Vector position, Vector velocity, Vector acceleration,
                           real mass, real damping, real startTime)
 {
@@ -322,9 +312,9 @@ void Particle_Destroy(Particle *particle)
 }
 
 ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
-                                real startTime, real endTime, void *parameters)
+                                real startTime, real endTime, void *parameters, ForceIdentifier identifier)
 {
-    if (!particle || !force)
+    if (!particle || !force || parameters)
     {
         return PARTICLE_ERROR_INVALID_PARAM;
     }
@@ -348,6 +338,19 @@ ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
     generator->startTime = startTime;
     generator->endTime = endTime;
     generator->isActive = true;
+    generator->identity = identifier;
+
+    return PARTICLE_SUCCESS;
+}
+
+ParticleError Particle_AddGrav(Particle *particle)
+{
+    return Particle_AddForce(particle, Particle_GravityForce, 0.0, INFINITY, NULL, GRAV);
+}
+
+ParticleError Particle_AddDrag(Particle *particle, DragCoefficients *dragCoefficients)
+{
+    return Particle_AddForce(particle, Particle_DragForce, 0.0, INFINITY, (void *)dragCoefficients, DRAG);
 }
 
 void Particle_ClearForces(Particle *particle)
@@ -371,8 +374,26 @@ void Particle_Integrate(Particle *particle, real duration)
         if (particle->time >= generator->startTime &&
             particle->time <= generator->endTime)
         {
-            Vector force = generator->function(particle, generator->parameters);
-            vecAdd(&particle->resultantForce, &force);
+            if (generator->identity = SPRING)
+            {
+                SpringParameters *param = (SpringParameters *)generator->parameters;
+                if (param->notAlreadyUsed)
+                {
+                    vecAdd(&particle->resultantForce, &(param->forceVal));
+                    param->notAlreadyUsed = false;
+                }
+                else
+                {
+                    Vector force = generator->function(particle, generator->parameters);
+                    vecAdd(&particle->resultantForce, &force);
+                    param->notAlreadyUsed = true;
+                }
+            }
+            else
+            {
+                Vector force = generator->function(particle, generator->parameters);
+                vecAdd(&particle->resultantForce, &force);
+            }
         }
     }
 
@@ -392,3 +413,13 @@ void Particle_Integrate(Particle *particle, real duration)
 }
 
 #endif
+
+/*
+
+Springs and particles alone can produce a whole range of impressive effects
+such as ropes, flags, cloth garments, and water ripples. Along with hard constraints, they can
+represent almost any kind of object.
+
+
+
+*/
