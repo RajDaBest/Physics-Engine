@@ -120,12 +120,13 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -9.81
+#define ACC_DUE_TO_GRAV -98.1
 
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
 typedef struct DragCoefficients DragCoefficients;
 typedef struct SpringParameters SpringParameters;
+typedef struct AnchoredSpringParameters AnchoredSpringParameters;
 typedef enum ParticleError ParticleError;
 typedef enum ForceIdentifier ForceIdentifier;
 
@@ -172,6 +173,14 @@ struct SpringParameters
     bool notAlreadyUsed;
 };
 
+struct AnchoredSpringParameters
+{
+    Vector anchor;
+    real springConstant;
+    real dampingCoeff;
+    real restLength;
+};
+
 struct Particle
 {
     Vector position;
@@ -214,17 +223,20 @@ ParticleError Particle_Integrate(Particle *particle, real duration);
 ParticleError buildDragCoeffs(real linear, real quadratic, DragCoefficients *coeffs);
 ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
                                     real dampingCoeff, SpringParameters *params);
+ParticleError buildAnchoredSpringParameters(Vector anchor, real springConstant, real restLength, real dampingCoefficient, AnchoredSpringParameters *anchoredSpringParameters);
 ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
                                 real startTime, real endTime, void *parameters,
                                 ForceIdentifier identifier);
 ParticleError Particle_AddGrav(Particle *particle);
 ParticleError Particle_AddDrag(Particle *particle, DragCoefficients *dragCoefficients);
 ParticleError Particle_AddSpring(Particle *particleA, Particle *particleB, SpringParameters *springParameters, real startTime, real endTime);
+ParticleError Particle_AddAnchoredSpring(Particle *particle, Vector anchor, AnchoredSpringParameters *anchoredSpringParameters, real startTime, real endTime);
 void Particle_ClearForces(Particle *particle);
 
 Vector Particle_GravityForce(const Particle *particle, void *gravParameters);
 Vector Particle_DragForce(const Particle *particle, void *dragParameters);
 Vector Particle_SpringForce(const Particle *particle, void *springParameters);
+Vector Particle_AnchoredSpringForce(const Particle *particle, void *anchoredSpringParameters);
 
 ParticleError Particle_GetMass(const Particle *particle, real *mass);
 ParticleError Particle_SetMass(Particle *particle, real mass);
@@ -329,6 +341,31 @@ Vector Particle_SpringForce(const Particle *particle, void *springParameters)
     return force;
 }
 
+Vector Particle_AnchoredSpringForce(const Particle *particle, void *anchoredSpringParameters)
+{
+    if (!particle || !anchoredSpringParameters)
+    {
+        particleErrno = PARTICLE_ERROR_INVALID_PARAM;
+        return nullVectorDef();
+    }
+
+    AnchoredSpringParameters *params = (AnchoredSpringParameters *)anchoredSpringParameters;
+
+    Vector anchorPos = params->anchor;
+    invert(&anchorPos);
+
+    Vector force = particle->position;
+    vecAdd(&force, &anchorPos);
+
+    real forceMagnitude = -params->springConstant * (magnitude(force) - params->restLength) - params->dampingCoeff * ((dotProduct(force, particle->velocity) / magnitude(force)));
+
+    normalize(&force);
+    scale(&force, forceMagnitude);
+
+    particleErrno = PARTICLE_SUCCESS;
+    return force;
+}
+
 Particle *Particle_Create(Vector position, Vector velocity, Vector acceleration,
                           real mass, real damping, real startTime)
 {
@@ -409,9 +446,9 @@ ParticleError buildDragCoeffs(real linear, real quadratic, DragCoefficients *coe
 }
 
 ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
-                                    real dampingCoeff, SpringParameters *params)
+                                    real dampingCoeff, SpringParameters *springParameters)
 {
-    if (!params)
+    if (!springParameters)
     {
         return PARTICLE_ERROR_INVALID_PARAM;
     }
@@ -436,15 +473,42 @@ ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, re
         return PARTICLE_ERROR_INVALID_DAMPING_COEFF;
     }
 
-    params->particleA = particleA;
-    params->particleB = particleB;
-    params->springConstant = springConstant;
-    params->restLength = restLength;
-    params->dampingCoeff = dampingCoeff;
-    params->notAlreadyUsed = false;
-    params->forceVal = nullVectorDef();
+    springParameters->particleA = particleA;
+    springParameters->particleB = particleB;
+    springParameters->springConstant = springConstant;
+    springParameters->restLength = restLength;
+    springParameters->dampingCoeff = dampingCoeff;
+    springParameters->notAlreadyUsed = false;
+    springParameters->forceVal = nullVectorDef();
 
     return PARTICLE_SUCCESS;
+}
+
+ParticleError buildAnchoredSpringParameters(Vector anchor, real springConstant, real restLength, real dampingCoeff, AnchoredSpringParameters *anchoredSpringParameters)
+{
+    if (!anchoredSpringParameters)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+
+    if (springConstant < 0.0)
+    {
+        return PARTICLE_ERROR_INVALID_SPRING_CONSTANT;
+    }
+
+    if (restLength < 0.0)
+    {
+        return PARTICLE_ERROR_INVALID_REST_LENGTH;
+    }
+
+    if (dampingCoeff < 0.0)
+    {
+        return PARTICLE_ERROR_INVALID_DAMPING_COEFF;
+    }
+
+    anchoredSpringParameters->dampingCoeff = dampingCoeff;
+    anchoredSpringParameters->restLength = restLength;
+    anchoredSpringParameters->springConstant = springConstant;
 }
 
 ParticleError Particle_GetMass(const Particle *particle, real *mass)
@@ -547,6 +611,10 @@ ParticleError Particle_AddSpring(Particle *particleA, Particle *particleB, Sprin
 {
     Particle_AddForce(particleA, Particle_SpringForce, startTime, endTime, (void *)springParameters, SPRING);
     return (Particle_AddForce(particleB, Particle_SpringForce, startTime, endTime, (void *)springParameters, SPRING));
+}
+
+ParticleError Particle_AddAnchoredSpring(Particle *particle, Vector anchor, AnchoredSpringParameters *anchoredSpringParameters, real startTime, real endTime)
+{
 }
 
 void Particle_ClearForces(Particle *particle)

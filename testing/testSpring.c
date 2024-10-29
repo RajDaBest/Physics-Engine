@@ -12,8 +12,8 @@
 #define FRAME_TIME (1.0 / TARGET_FPS)
 
 // Spring constants
-#define SPRING_COEFFICIENT 20.0f
-#define SPRING_REST_LENGTH 10.0f
+#define SPRING_COEFFICIENT 50.0f
+#define SPRING_REST_LENGTH 100.0f
 #define DAMPING_COEFFICIENT 0.1f
 
 typedef struct
