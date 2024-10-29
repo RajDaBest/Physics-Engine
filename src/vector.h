@@ -21,7 +21,7 @@ typedef struct
     (Vector) { .x = 0.0, .y = 0.0, .z = 0.0, .padding = 0.0 }
 #define magnitude(vector) (real_sqrt((vector).x * (vector).x + (vector).y * (vector).y + (vector).z * (vector).z))
 #define squaredMagnitude(vector) ((vector).x * (vector).x + (vector).y * (vector).y + (vector).z * (vector).z)
-#define dotProduct(vectorA, vectorB) (vectorA->x * vectorB->x + vectorA->y * vectorB->y + vectorA->z * vectorB->z) // returns dot product of vectorA and vectorB
+#define dotProduct(vectorA, vectorB) (vectorA.x * vectorB.x + vectorA.y * vectorB.y + vectorA.z * vectorB.z) // returns dot product of vectorA and vectorB
 
 static inline void invert(Vector *vector);                                                           // invert the sign of all the components of vector
 static inline void scale(Vector *vector, real scalar);                                               // scale vector by real constant scalar

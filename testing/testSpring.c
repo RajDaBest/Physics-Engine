@@ -12,9 +12,9 @@
 #define FRAME_TIME (1.0 / TARGET_FPS)
 
 // Spring constants
-#define SPRING_COEFFICIENT 50.0f
-#define SPRING_REST_LENGTH 100.0f
-#define SPRING_MAX_LENGTH 10000.0f
+#define SPRING_COEFFICIENT 20.0f
+#define SPRING_REST_LENGTH 10.0f
+#define DAMPING_COEFFICIENT 0.1f
 
 typedef struct
 {
@@ -77,8 +77,8 @@ static ParticleError createParticlePair(ParticleInstance *particles, int *partic
 
     // Create first particle
     Vector pos1 = getRandomPosition();
-    Vector vel1 = nullVectorDef();
-    Vector initAcc = vectorDef(0.0, 0.0, 0.0);
+    Vector vel1 = getRandomVelocity();
+    Vector initAcc = nullVectorDef();
 
     Particle *p1 = Particle_Create(
         pos1,
@@ -90,7 +90,7 @@ static ParticleError createParticlePair(ParticleInstance *particles, int *partic
     );
 
     if (!p1)
-        return PARTICLE_ERROR_MEMORY;
+        return particleErrno; // Get error from Create
 
     // Create second particle
     Vector pos2 = getRandomPosition();
@@ -108,91 +108,73 @@ static ParticleError createParticlePair(ParticleInstance *particles, int *partic
     if (!p2)
     {
         Particle_Destroy(p1);
-        return PARTICLE_ERROR_MEMORY;
+        return particleErrno; // Get error from Create
     }
-
-    // Add forces to both particles
-    ParticleError error;
-
-    // Add forces to p1
-    /* error = Particle_AddForce(p1, Particle_GravityForce, 0.0, INFINITY, NULL);
-    if (error != PARTICLE_SUCCESS)
-    {
-        Particle_Destroy(p1);
-        Particle_Destroy(p2);
-        return error;
-    }
-
-    error = Particle_AddForce(p1, Particle_DragForce, 0.0, INFINITY, &dragCoeffs);
-    if (error != PARTICLE_SUCCESS)
-    {
-        Particle_Destroy(p1);
-        Particle_Destroy(p2);
-        return error;
-    } */
 
     // Add forces to p2
-    error = Particle_AddForce(p2, Particle_GravityForce, 0.0, INFINITY, NULL);
+    ParticleError error = Particle_AddGrav(p2);
     if (error != PARTICLE_SUCCESS)
     {
         Particle_Destroy(p1);
         Particle_Destroy(p2);
         return error;
-    } 
+    }
 
-    error = Particle_AddForce(p2, Particle_DragForce, 0.0, INFINITY, &dragCoeffs);
+    error = Particle_AddDrag(p2, &dragCoeffs);
     if (error != PARTICLE_SUCCESS)
     {
         Particle_Destroy(p1);
         Particle_Destroy(p2);
         return error;
-    } 
+    }
 
-    // Create spring parameters for both particles
-    SpringParameters *spring1 = malloc(sizeof(SpringParameters));
-    SpringParameters *spring2 = malloc(sizeof(SpringParameters));
-
-    if (!spring1 || !spring2)
+    error = Particle_AddGrav(p1);
+    if (error != PARTICLE_SUCCESS)
     {
-        free(spring1);
-        free(spring2);
+        Particle_Destroy(p1);
+        Particle_Destroy(p2);
+        return error;
+    }
+
+    error = Particle_AddDrag(p1, &dragCoeffs);
+    if (error != PARTICLE_SUCCESS)
+    {
+        Particle_Destroy(p1);
+        Particle_Destroy(p2);
+        return error;
+    }
+
+    // Create spring parameters
+    SpringParameters *spring = malloc(sizeof(SpringParameters));
+
+    if (!spring)
+    {
+        free(spring);
         Particle_Destroy(p1);
         Particle_Destroy(p2);
         return PARTICLE_ERROR_MEMORY;
     }
 
-    // Set up spring parameters
-    spring1->other = p2;
-    spring1->springCoeff = SPRING_COEFFICIENT;
-    spring1->restLength = SPRING_REST_LENGTH;
-    spring1->maxLength = SPRING_MAX_LENGTH;
-
-    spring2->other = p1;
-    spring2->springCoeff = SPRING_COEFFICIENT;
-    spring2->restLength = SPRING_REST_LENGTH;
-    spring2->maxLength = SPRING_MAX_LENGTH;
-
-    // Add spring forces
-    /* error = Particle_AddForce(p1, Particle_SpringForce, 0.0, INFINITY, spring1);
+    // Initialize spring parameters
+    error = buildSpringParameters(p1, p2, SPRING_COEFFICIENT, SPRING_REST_LENGTH,
+                                  DAMPING_COEFFICIENT, spring);
     if (error != PARTICLE_SUCCESS)
     {
-        free(spring1);
-        free(spring2);
-        Particle_Destroy(p1);
-        Particle_Destroy(p2);
-        return error;
-    } */
-
-    error = Particle_AddForce(p2, Particle_SpringForce, 0.0, INFINITY, spring2);
-    if (error != PARTICLE_SUCCESS)
-    {
-        free(spring1);
-        free(spring2);
+        free(spring);
         Particle_Destroy(p1);
         Particle_Destroy(p2);
         return error;
     }
 
+    // Add spring forces
+    error = Particle_AddSpring(p1, p2, spring, 0.0, INFINITY);
+    if (error != PARTICLE_SUCCESS)
+    {
+        free(spring);
+        Particle_Destroy(p1);
+        Particle_Destroy(p2);
+        return error;
+    }
     // Store particles
     particles[*particleCount].particle = p1;
     particles[*particleCount].active = true;
@@ -210,10 +192,11 @@ static void cleanupParticles(ParticleInstance *particles, int count)
 {
     for (int i = 0; i < count; i++)
     {
-        if (particles[i].particle)
+        if (particles[i].active && particles[i].particle)
         {
             Particle_Destroy(particles[i].particle);
             particles[i].particle = NULL;
+            particles[i].active = false;
         }
     }
 }
@@ -290,7 +273,12 @@ int main(void)
         {
             if (particles[i].active && particles[i].particle)
             {
-                Particle_Integrate(particles[i].particle, deltaTime);
+                ParticleError error = Particle_Integrate(particles[i].particle, deltaTime);
+                if (error != PARTICLE_SUCCESS)
+                {
+                    fprintf(stderr, "Physics integration error %d for particle %d\n", error, i);
+                    continue;
+                }
 
                 // Check if particle is off screen
                 Vector pos = particles[i].particle->position;
@@ -303,14 +291,14 @@ int main(void)
                         int pairIdx = particles[i].pairIndex;
                         if (particles[pairIdx].active)
                         {
-                            particles[pairIdx].active = false;
                             Particle_Destroy(particles[pairIdx].particle);
                             particles[pairIdx].particle = NULL;
+                            particles[pairIdx].active = false;
                         }
                     }
-                    particles[i].active = false;
                     Particle_Destroy(particles[i].particle);
                     particles[i].particle = NULL;
+                    particles[i].active = false;
                 }
             }
         }
