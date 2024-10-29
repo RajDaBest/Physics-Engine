@@ -594,6 +594,10 @@ ParticleError Particle_AddForce(Particle *particle, ForceFunction force,
 
 ParticleError Particle_AddGrav(Particle *particle)
 {
+    if (!particle)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
     return Particle_AddForce(particle, Particle_GravityForce, 0.0, INFINITY, NULL, GRAV);
 }
 
@@ -609,12 +613,21 @@ ParticleError Particle_AddDrag(Particle *particle, DragCoefficients *dragCoeffic
 
 ParticleError Particle_AddSpring(Particle *particleA, Particle *particleB, SpringParameters *springParameters, real startTime, real endTime)
 {
+    if (!particleA || !particleB || !springParameters)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
     Particle_AddForce(particleA, Particle_SpringForce, startTime, endTime, (void *)springParameters, SPRING);
     return (Particle_AddForce(particleB, Particle_SpringForce, startTime, endTime, (void *)springParameters, SPRING));
 }
 
 ParticleError Particle_AddAnchoredSpring(Particle *particle, Vector anchor, AnchoredSpringParameters *anchoredSpringParameters, real startTime, real endTime)
 {
+    if (!particle || anchoredSpringParameters)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+    return (Particle_AddForce(particle, Particle_AnchoredSpringForce, startTime, endTime, (void *)anchoredSpringParameters, ANCHORED_SPRING));
 }
 
 void Particle_ClearForces(Particle *particle)
