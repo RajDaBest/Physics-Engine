@@ -120,7 +120,7 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include <stdbool.h>
 
 #define FORCE_LIMIT 100
-#define ACC_DUE_TO_GRAV -9.81
+#define ACC_DUE_TO_GRAV -0.001
 
 typedef struct Particle Particle;
 typedef struct ForceGenerator ForceGenerator;
