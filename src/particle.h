@@ -118,8 +118,9 @@ The time duration we use it the duration of the last frame (or some initial dura
 
 #include "vector.h"
 #include <stdbool.h>
+#include <omp.h>
 
-#define N_STEPS 10
+#define N_STEPS 20
 
 #define FORCE_LIMIT 100
 #define ACC_DUE_TO_GRAV -9.81
@@ -806,6 +807,8 @@ ParticleError Particle_Integrate(Particle *particle, real outDuration)
         return PARTICLE_ERROR_INVALID_DURATION;
     }
 
+    omp_set_num_threads(4);
+
     real duration = outDuration / N_STEPS;
     size_t i = 0;
 
@@ -813,18 +816,20 @@ ParticleError Particle_Integrate(Particle *particle, real outDuration)
     {
         addScaled(&particle->position, &particle->velocity, 1.0, duration);
 
+        Vector totalForce = nullVectorDef();
+
+#pragma omp parallel for schedule(static, 5)
         for (size_t i = 0; i < particle->forceCount; i++)
         {
             ForceGenerator *generator = &particle->forceRegistry[i];
             if (!generator->isActive)
                 continue;
 
-            Vector localForce = nullVectorDef();
-
             if (particle->time >= generator->startTime &&
                 particle->time <= generator->endTime)
             {
                 Vector force = generator->function(particle, generator->parameters);
+#pragma omp critical
                 vecAdd(&particle->resultantForce, &force);
             }
         }

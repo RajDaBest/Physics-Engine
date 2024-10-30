@@ -15,8 +15,8 @@
 #define MAX_THREADS 16
 
 // Spring constants
-#define SPRING_COEFFICIENT 10.0f
-#define SPRING_REST_LENGTH 10.0f
+#define SPRING_COEFFICIENT 1000.0f
+#define SPRING_REST_LENGTH 200.0f
 #define DAMPING_COEFFICIENT 0.1f
 
 typedef struct
