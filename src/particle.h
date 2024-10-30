@@ -119,6 +119,8 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include "vector.h"
 #include <stdbool.h>
 
+#define N_STEPS 10
+
 #define FORCE_LIMIT 100
 #define ACC_DUE_TO_GRAV -9.81
 
@@ -172,8 +174,6 @@ struct SpringParameters
     real springConstant;
     real dampingCoeff;
     real restLength;
-    Vector forceVal;
-    bool notAlreadyUsed;
 };
 
 struct AnchoredSpringParameters
@@ -575,8 +575,6 @@ ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, re
     springParameters->springConstant = springConstant;
     springParameters->restLength = restLength;
     springParameters->dampingCoeff = dampingCoeff;
-    springParameters->notAlreadyUsed = false;
-    springParameters->forceVal = nullVectorDef();
 
     return PARTICLE_SUCCESS;
 }
@@ -796,78 +794,62 @@ void Particle_ClearForces(Particle *particle)
     }
 }
 
-ParticleError Particle_Integrate(Particle *particle, real duration)
+ParticleError Particle_Integrate(Particle *particle, real outDuration)
 {
     if (!particle)
     {
         return PARTICLE_ERROR_INVALID_PARAM;
     }
 
-    if (duration <= 0.0)
+    if (outDuration <= 0.0)
     {
         return PARTICLE_ERROR_INVALID_DURATION;
     }
 
-    addScaled(&particle->position, &particle->velocity, 1.0, duration);
+    real duration = outDuration / N_STEPS;
+    size_t i = 0;
 
-    for (size_t i = 0; i < particle->forceCount; i++)
+    for (size_t i = 0; i < N_STEPS; i++)
     {
-        ForceGenerator *generator = &particle->forceRegistry[i];
-        if (!generator->isActive)
-            continue;
+        addScaled(&particle->position, &particle->velocity, 1.0, duration);
 
-        if (particle->time >= generator->startTime &&
-            particle->time <= generator->endTime)
+        for (size_t i = 0; i < particle->forceCount; i++)
         {
-            if (generator->identity == SPRING || generator->identity == BUNGEE)
-            {
-                SpringParameters *param = (SpringParameters *)generator->parameters;
-                if (param->notAlreadyUsed)
-                {
-                    vecAdd(&particle->resultantForce, &(param->forceVal));
-                    param->notAlreadyUsed = false;
-                }
-                else
-                {
-                    Vector force = generator->function(particle, generator->parameters);
-                    vecAdd(&particle->resultantForce, &force);
-                    param->notAlreadyUsed = true;
-                    Vector otherForce = force;
-                    invert(&otherForce);
-                    param->forceVal = otherForce;
-                }
-            }
-            else
+            ForceGenerator *generator = &particle->forceRegistry[i];
+            if (!generator->isActive)
+                continue;
+
+            Vector localForce = nullVectorDef();
+
+            if (particle->time >= generator->startTime &&
+                particle->time <= generator->endTime)
             {
                 Vector force = generator->function(particle, generator->parameters);
                 vecAdd(&particle->resultantForce, &force);
             }
-
-            Vector force = generator->function(particle, generator->parameters);
-            vecAdd(&particle->resultantForce, &force);
         }
+
+        bool isStatic;
+        ParticleError error = Particle_IsStatic(particle, &isStatic);
+        if (error != PARTICLE_SUCCESS)
+        {
+            return error;
+        }
+
+        if (!isStatic)
+        {
+            Vector accFromForce = particle->resultantForce;
+            scale(&accFromForce, particle->inverseMass);
+            vecAdd(&particle->acceleration, &accFromForce);
+        }
+
+        real dampingFactor = pow(particle->damping, duration);
+        addScaled(&particle->velocity, &particle->acceleration, dampingFactor, duration);
+
+        particle->resultantForce = nullVectorDef();
+        particle->time += duration;
+        particle->acceleration = nullVectorDef();
     }
-
-    bool isStatic;
-    ParticleError error = Particle_IsStatic(particle, &isStatic);
-    if (error != PARTICLE_SUCCESS)
-    {
-        return error;
-    }
-
-    if (!isStatic)
-    {
-        Vector accFromForce = particle->resultantForce;
-        scale(&accFromForce, particle->inverseMass);
-        vecAdd(&particle->acceleration, &accFromForce);
-    }
-
-    real dampingFactor = pow(particle->damping, duration);
-    addScaled(&particle->velocity, &particle->acceleration, dampingFactor, duration);
-
-    particle->resultantForce = nullVectorDef();
-    particle->time += duration;
-    particle->acceleration = nullVectorDef();
 
     return PARTICLE_SUCCESS;
 }

@@ -9,14 +9,14 @@
 #define WINDOW_HEIGHT 1080
 #define CIRCLE_RADIUS 10
 #define MAX_PARTICLES 100000
-#define TARGET_FPS 240
+#define TARGET_FPS 120
 #define FRAME_TIME (1.0 / TARGET_FPS)
 #define PARTICLES_PER_THREAD 10
 #define MAX_THREADS 16
 
 // Spring constants
 #define SPRING_COEFFICIENT 10.0f
-#define SPRING_REST_LENGTH 100.0f
+#define SPRING_REST_LENGTH 10.0f
 #define DAMPING_COEFFICIENT 0.1f
 
 typedef struct
