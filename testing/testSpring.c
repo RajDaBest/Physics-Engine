@@ -9,15 +9,15 @@
 #define WINDOW_HEIGHT 1080
 #define CIRCLE_RADIUS 10
 #define MAX_PARTICLES 100000
-#define TARGET_FPS 240
+#define TARGET_FPS 120
 #define FRAME_TIME (1.0 / TARGET_FPS)
 #define PARTICLES_PER_THREAD 10
 #define MAX_THREADS 16
 
 // Spring constants
-#define SPRING_COEFFICIENT 10.0f
-#define SPRING_REST_LENGTH 100.0f
-#define DAMPING_COEFFICIENT 0.1f
+#define SPRING_COEFFICIENT 5.0f
+#define SPRING_REST_LENGTH 10.0f
+#define DAMPING_COEFFICIENT 0.0
 
 typedef struct
 {
@@ -37,7 +37,7 @@ typedef struct
 } ThreadData;
 
 // Global variables
-static DragCoefficients dragCoeffs = {0.05, 0.005};
+static DragCoefficients dragCoeffs = {0.001, 0.002};
 static pthread_t threads[MAX_THREADS];
 static ThreadData threadData[MAX_THREADS];
 static int activeThreads = 0;
