@@ -118,9 +118,10 @@ The time duration we use it the duration of the last frame (or some initial dura
 
 #include "vector.h"
 #include <stdbool.h>
+#include <sys/time.h>
 #include <omp.h>
 
-#define N_STEPS 10
+#define N_STEPS 100
 
 #define FORCE_LIMIT 100
 #define ACC_DUE_TO_GRAV -9.81
@@ -223,7 +224,13 @@ Particle *Particle_Create(Vector position, Vector velocity, Vector acceleration,
 
 void Particle_Destroy(Particle *particle);
 
+static ParticleError Particle_EulerIntegrate(Particle *particle, real outDuration);
+
+static Vector calculateK(Particle *particle, real duration);
+static ParticleError Particle_RKIntegrate(Particle *particle, real duration);
+
 ParticleError Particle_Integrate(Particle *particle, real duration);
+
 ParticleError buildDragCoeffs(real linear, real quadratic, DragCoefficients *coeffs);
 ParticleError buildSpringParameters(Particle *particleA, Particle *particleB, real springConstant, real restLength,
                                     real dampingCoeff, SpringParameters *springParameters);
@@ -257,6 +264,10 @@ ParticleError Particle_IsStatic(const Particle *particle, bool *isStatic);
 
 ParticleError Particle_GetLastError(void);
 
+ParticleError SimulateParticles(Particle *restrict particleArray,
+                                const size_t numOfParticles,
+                                const real frameRate);
+                                
 ParticleError Particle_GetLastError(void)
 {
     ParticleError lastError = particleErrno;
@@ -959,8 +970,6 @@ static ParticleError Particle_RKIntegrate(Particle *particle, real duration)
     return PARTICLE_SUCCESS;
 }
 
-#define RK4
-
 ParticleError Particle_Integrate(Particle *particle, real duration)
 {
 #ifdef RK4
@@ -968,6 +977,98 @@ ParticleError Particle_Integrate(Particle *particle, real duration)
 #else
     return Particle_EulerIntegrate(particle, duration);
 #endif
+}
+
+#include <unistd.h>
+
+static inline uint64_t get_microseconds(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+}
+
+static inline void precise_sleep_us(uint64_t microseconds)
+{
+    if (microseconds > 0)
+    {
+        const uint64_t CHUNK_SIZE = 1000;
+        while (microseconds > CHUNK_SIZE)
+        {
+            usleep(CHUNK_SIZE);
+            microseconds -= CHUNK_SIZE;
+        }
+        if (microseconds > 0)
+        {
+            usleep(microseconds);
+        }
+    }
+}
+
+ParticleError SimulateParticles(Particle *restrict particleArray,
+                                const size_t numOfParticles,
+                                const real frameRate)
+{
+    if (!particleArray)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+    if (frameRate <= 0.0)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+    if (numOfParticles == 0)
+    {
+        return PARTICLE_ERROR_INVALID_PARAM;
+    }
+
+    const real frameDuration = 1.0 / frameRate;
+    const uint64_t frameDurationUs = (uint64_t)(frameDuration * 1000000.0);
+
+    const int num_threads = omp_get_num_procs();
+    omp_set_num_threads(num_threads);
+
+    const size_t chunk_size = (numOfParticles / num_threads) + 1;
+
+#pragma omp parallel
+    {
+    }
+
+    uint64_t last_frame_time = get_microseconds();
+    uint64_t current_time;
+    uint64_t elapsed_time;
+
+    while (true)
+    {
+        current_time = get_microseconds();
+
+#pragma omp parallel for schedule(dynamic, chunk_size)
+        for (size_t i = 0; i < numOfParticles; i++)
+        {
+            if (!(&particleArray[i]))
+            {
+                continue;
+            }
+
+#pragma omp simd
+            Particle_Integrate(&particleArray[i], frameDuration);
+        }
+
+        current_time = get_microseconds();
+        elapsed_time = current_time - last_frame_time;
+
+        if (elapsed_time < frameDurationUs)
+        {
+            precise_sleep_us(frameDurationUs - elapsed_time);
+            last_frame_time = last_frame_time + frameDurationUs;
+        }
+        else
+        {
+            last_frame_time = current_time;
+        }
+    }
+
+    return PARTICLE_SUCCESS;
 }
 
 #endif
