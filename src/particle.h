@@ -119,9 +119,11 @@ The time duration we use it the duration of the last frame (or some initial dura
 #include "vector.h"
 #include <stdbool.h>
 #include <sys/time.h>
+#include <stdint.h>
 #include <omp.h>
 
 #define N_STEPS 100
+#define THREAD_NO 4
 
 #define FORCE_LIMIT 100
 #define ACC_DUE_TO_GRAV -9.81
@@ -267,7 +269,7 @@ ParticleError Particle_GetLastError(void);
 ParticleError SimulateParticles(Particle *restrict particleArray,
                                 const size_t numOfParticles,
                                 const real frameRate);
-                                
+
 ParticleError Particle_GetLastError(void)
 {
     ParticleError lastError = particleErrno;
@@ -818,10 +820,14 @@ static ParticleError Particle_EulerIntegrate(Particle *particle, real outDuratio
         return PARTICLE_ERROR_INVALID_DURATION;
     }
 
+    /* const int num_threads = omp_get_num_procs();
+    omp_set_num_threads(num_threads);
+
+    const size_t chunk_size = (particle->forceCount / num_threads) + 1; */
+
     omp_set_num_threads(4);
 
     real duration = outDuration / N_STEPS;
-    size_t i = 0;
 
     for (size_t i = 0; i < N_STEPS; i++)
     {
@@ -829,7 +835,8 @@ static ParticleError Particle_EulerIntegrate(Particle *particle, real outDuratio
 
         Vector totalForce = nullVectorDef();
 
-#pragma omp parallel for schedule(static, 10)
+        /* #pragma omp parallel for schedule(dynamic, chunk_size) */
+        /* #pragma omp parallel for */
         for (size_t i = 0; i < particle->forceCount; i++)
         {
             ForceGenerator *generator = &particle->forceRegistry[i];
@@ -840,7 +847,7 @@ static ParticleError Particle_EulerIntegrate(Particle *particle, real outDuratio
                 particle->time <= generator->endTime)
             {
                 Vector force = generator->function(particle, generator->parameters);
-#pragma omp critical
+                /* #pragma omp critical */
                 vecAdd(&particle->resultantForce, &force);
             }
         }
@@ -874,9 +881,14 @@ static Vector calculateK(Particle *particle, real duration)
 {
     Vector totalForce = nullVectorDef();
 
-    omp_set_num_threads(4);
+    /* const int num_threads = omp_get_num_procs();
+    omp_set_num_threads(num_threads);
 
-#pragma omp parallel for schedule(static, 10)
+    const size_t chunk_size = (particle->forceCount / num_threads) + 1; */
+
+    /*   omp_set_num_threads(4);
+
+  #pragma omp parallel for */
     for (size_t i = 0; i < particle->forceCount; i++)
     {
         ForceGenerator *generator = &particle->forceRegistry[i];
@@ -887,7 +899,7 @@ static Vector calculateK(Particle *particle, real duration)
             particle->time <= generator->endTime)
         {
             Vector force = generator->function(particle, generator->parameters);
-#pragma omp critical
+            /* #pragma omp critical */
             vecAdd(&totalForce, &force);
         }
     }
@@ -1025,10 +1037,13 @@ ParticleError SimulateParticles(Particle *restrict particleArray,
     const real frameDuration = 1.0 / frameRate;
     const uint64_t frameDurationUs = (uint64_t)(frameDuration * 1000000.0);
 
-    const int num_threads = omp_get_num_procs();
+    /* const int num_threads = omp_get_num_procs();
     omp_set_num_threads(num_threads);
 
-    const size_t chunk_size = (numOfParticles / num_threads) + 1;
+    const size_t chunk_size = (numOfParticles / num_threads) + 1; */
+
+    omp_set_num_threads(THREAD_NO);
+    const size_t chunk_size = (numOfParticles / THREAD_NO) + 1;
 
 #pragma omp parallel
     {
@@ -1050,7 +1065,6 @@ ParticleError SimulateParticles(Particle *restrict particleArray,
                 continue;
             }
 
-#pragma omp simd
             Particle_Integrate(&particleArray[i], frameDuration);
         }
 
